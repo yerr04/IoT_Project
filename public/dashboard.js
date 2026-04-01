@@ -81,11 +81,14 @@ const breathingChart = new Chart(document.getElementById('breathingChart'), {
 
 socket.on('newReading', (data) => {
   const time = new Date().toLocaleTimeString();
+  const spo2 = Number(data.spo2);
+  const hr = Number(data.heartRate);
+  const ir = Number(data.irValue);
 
   labels.push(time);
-  spo2Data.push(data.spo2);
-  hrData.push(data.heartRate);
-  irData.push(data.irValue);
+  spo2Data.push(Number.isFinite(spo2) ? spo2 : null);
+  hrData.push(Number.isFinite(hr) ? hr : null);
+  irData.push(Number.isFinite(ir) ? ir : null);
 
   if (labels.length > MAX_POINTS) {
     labels.shift();
@@ -94,9 +97,14 @@ socket.on('newReading', (data) => {
     irData.shift();
   }
 
-  document.getElementById('spo2-val').textContent = data.spo2?.toFixed(1) ?? '--';
-  document.getElementById('hr-val').textContent = data.heartRate?.toFixed(0) ?? '--';
-  document.getElementById('node-val').textContent = `Node ${data.nodeId}`;
+  document.getElementById('spo2-val').textContent = Number.isFinite(spo2)
+    ? spo2.toFixed(1)
+    : '--';
+  document.getElementById('hr-val').textContent = Number.isFinite(hr)
+    ? hr.toFixed(0)
+    : '--';
+  document.getElementById('node-val').textContent =
+    data.nodeId != null ? `Node ${data.nodeId}` : '--';
 
   spo2Chart.update();
   breathingChart.update();
