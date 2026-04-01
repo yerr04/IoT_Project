@@ -1,0 +1,32 @@
+{
+  "name": "iot_project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yerr04/IoT_Project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yerr04/IoT_Project/issues"
+  },
+  "homepage": "https://github.com/yerr04/IoT_Project#readme",
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.7.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

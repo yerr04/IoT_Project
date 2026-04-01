@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ApneaNite Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      padding: 24px;
+    }
+    h1 { color: #7eb8f7; margin-bottom: 24px; }
+    .stats {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #1c1f2e;
+      border-radius: 12px;
+      padding: 16px 24px;
+      flex: 1;
+      text-align: center;
+    }
+    .stat-card h2 { font-size: 2rem; }
+    .stat-card p { color: #888; font-size: 0.85rem; margin-top: 4px; }
+    .chart-box {
+      background: #1c1f2e;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    canvas { width: 100% !important; }
+  </style>
+</head>
+<body>
+  <h1>🫁 ApneaNite Live Monitor</h1>
+
+  <div class="stats">
+    <div class="stat-card">
+      <h2 id="spo2-val">--</h2>
+      <p>SpO2 (%)</p>
+    </div>
+    <div class="stat-card">
+      <h2 id="hr-val">--</h2>
+      <p>Heart Rate (BPM)</p>
+    </div>
+    <div class="stat-card">
+      <h2 id="node-val">--</h2>
+      <p>Active Node</p>
+    </div>
+  </div>
+
+  <div class="chart-box">
+    <canvas id="spo2Chart"></canvas>
+  </div>
+  <div class="chart-box">
+    <canvas id="breathingChart"></canvas>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
