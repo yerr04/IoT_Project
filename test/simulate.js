@@ -1,21 +1,21 @@
-// test/simulate.js
+// Local test: pushes the same shape as ESP32 sensor nodes (see POST /api/readings).
 const admin = require('firebase-admin');
 const serviceAccount = require('../serviceAccountKey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: 'https://iot-project-36aef-default-rtdb.firebaseio.com'
+  databaseURL: 'https://iot-project-36aef-default-rtdb.firebaseio.com',
 });
 
 const db = admin.database();
 
 setInterval(() => {
   db.ref('readings').push({
-    nodeId: Math.random() > 0.5 ? 1 : 2,
-    spo2: 95 + Math.random() * 4,
-    heartRate: 60 + Math.random() * 20,
-    irValue: 80000 + Math.random() * 10000,
+    nodeName: 'BEDSIDE',
+    temp: 21 + Math.random() * 2,
+    pressure: 1000 + Math.random() * 15,
+    soundActivity: Math.round(50 + Math.random() * 400),
     timestamp: Date.now(),
   });
   console.log('Pushed simulated reading');
-}, 500);
+}, 1000);

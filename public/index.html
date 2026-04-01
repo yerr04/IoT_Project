@@ -19,12 +19,14 @@
       display: flex;
       gap: 16px;
       margin-bottom: 24px;
+      flex-wrap: wrap;
     }
     .stat-card {
       background: #1c1f2e;
       border-radius: 12px;
       padding: 16px 24px;
       flex: 1;
+      min-width: 140px;
       text-align: center;
     }
     .stat-card h2 { font-size: 2rem; }
@@ -43,24 +45,28 @@
 
   <div class="stats">
     <div class="stat-card">
-      <h2 id="spo2-val">--</h2>
-      <p>SpO2 (%)</p>
+      <h2 id="temp-val">--</h2>
+      <p>Temperature (°C)</p>
     </div>
     <div class="stat-card">
-      <h2 id="hr-val">--</h2>
-      <p>Heart Rate (BPM)</p>
+      <h2 id="pressure-val">--</h2>
+      <p>Pressure (hPa)</p>
+    </div>
+    <div class="stat-card">
+      <h2 id="sound-val">--</h2>
+      <p>Sound activity</p>
     </div>
     <div class="stat-card">
       <h2 id="node-val">--</h2>
-      <p>Active Node</p>
+      <p>Active node</p>
     </div>
   </div>
 
   <div class="chart-box">
-    <canvas id="spo2Chart"></canvas>
+    <canvas id="envChart"></canvas>
   </div>
   <div class="chart-box">
-    <canvas id="breathingChart"></canvas>
+    <canvas id="soundChart"></canvas>
   </div>
 
   <script src="dashboard.js"></script>

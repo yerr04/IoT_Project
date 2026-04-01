@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server/index.js",
-    "dev": "nodemon server/index.js",
-    "simulate": "node test/simulate.js"
+    "start": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node server/index.js",
+    "dev": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json nodemon server/index.js",
+    "simulate": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node test/simulate.js"
   },
   "repository": {
     "type": "git",
