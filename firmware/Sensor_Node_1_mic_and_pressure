@@ -1,0 +1,104 @@
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include <Wire.h>
+#include <Adafruit_BMP280.h>
+
+const uint8_t ESPNOW_CHANNEL = 6;
+uint8_t gatewayAddress[] = {0x20, 0xE7, 0xC8, 0xB1, 0xEC, 0x98};
+
+typedef struct {
+  char nodeName[16];
+  float temp;
+  float pressure;
+  int soundActivity;
+} BedsidePacket;
+
+BedsidePacket outgoingData;
+
+Adafruit_BMP280 bmp;
+const int soundPin = 34;
+
+int soundMin = 4095;
+int soundMax = 0;
+unsigned long lastSend = 0;
+const unsigned long sendInterval = 1000;
+
+void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+  Serial.print("Send status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  Wire.begin(21, 22);
+
+  bool status = bmp.begin(0x76);
+  if (!status) status = bmp.begin(0x77);
+
+  if (!status) {
+    Serial.println("BMP280 not found");
+    while (true) delay(1000);
+  }
+
+  WiFi.mode(WIFI_STA);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.disconnect(true, true);
+
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_send_cb(onDataSent);
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, gatewayAddress, 6);
+  peerInfo.channel = ESPNOW_CHANNEL;
+  peerInfo.encrypt = false;
+
+  esp_now_del_peer(gatewayAddress);
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+
+  strcpy(outgoingData.nodeName, "BEDSIDE");
+
+  Serial.println("Bedside sender ready");
+}
+
+void loop() {
+  int soundVal = analogRead(soundPin);
+  if (soundVal < soundMin) soundMin = soundVal;
+  if (soundVal > soundMax) soundMax = soundVal;
+
+  if (millis() - lastSend >= sendInterval) {
+    lastSend = millis();
+
+    outgoingData.temp = bmp.readTemperature();
+    outgoingData.pressure = bmp.readPressure() / 100.0;
+    outgoingData.soundActivity = soundMax - soundMin;
+
+    esp_err_t result = esp_now_send(gatewayAddress, (uint8_t*)&outgoingData, sizeof(outgoingData));
+
+    Serial.print("Sending -> Temp: ");
+    Serial.print(outgoingData.temp, 2);
+    Serial.print(" | Pressure: ");
+    Serial.print(outgoingData.pressure, 2);
+    Serial.print(" | Sound: ");
+    Serial.print(outgoingData.soundActivity);
+    Serial.print(" | Result: ");
+    Serial.println(result == ESP_OK ? "Sent" : "Error");
+
+    soundMin = 4095;
+    soundMax = 0;
+  }
+}
