@@ -14,11 +14,57 @@
       color: #e0e0e0;
       padding: 24px;
     }
-    h1 { color: #7eb8f7; margin-bottom: 24px; }
+    h1 { color: #7eb8f7; margin-bottom: 16px; }
+
+    .gateway-bar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: #1c1f2e;
+      border-radius: 10px;
+      padding: 12px 20px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    .gw-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .gw-dot.online  { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+    .gw-dot.offline { background: #f44336; }
+    .gw-label { color: #aaa; font-size: 0.85rem; }
+    .gw-value { color: #e0e0e0; font-weight: 600; }
+    .spacer { flex: 1; }
+    .btn {
+      background: #2a2d3e;
+      color: #ccc;
+      border: 1px solid #3a3d4e;
+      border-radius: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #3a3d4e; }
+    .btn.danger { border-color: #f44336; color: #f44336; }
+    .btn.danger:hover { background: #f44336; color: #fff; }
+
+    .section-title {
+      color: #7eb8f7;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin: 28px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #2a2d3e;
+    }
+
     .stats {
       display: flex;
       gap: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
     }
     .stat-card {
@@ -26,11 +72,13 @@
       border-radius: 12px;
       padding: 16px 24px;
       flex: 1;
-      min-width: 140px;
+      min-width: 130px;
       text-align: center;
     }
-    .stat-card h2 { font-size: 2rem; }
-    .stat-card p { color: #888; font-size: 0.85rem; margin-top: 4px; }
+    .stat-card h2 { font-size: 1.8rem; }
+    .stat-card p { color: #888; font-size: 0.8rem; margin-top: 4px; }
+    .stat-card .warn  { color: #ff9800; }
+    .stat-card .alert { color: #f44336; }
     .chart-box {
       background: #1c1f2e;
       border-radius: 12px;
@@ -43,10 +91,31 @@
 <body>
   <h1>ApneaNite Live Monitor</h1>
 
+  <!-- Gateway Status -->
+  <div class="gateway-bar">
+    <div class="gw-dot" id="gw-dot"></div>
+    <div>
+      <span class="gw-label">Gateway </span>
+      <span class="gw-value" id="gw-status">Offline</span>
+    </div>
+    <div>
+      <span class="gw-label">Last seen: </span>
+      <span class="gw-value" id="gw-last-seen">--</span>
+    </div>
+    <div>
+      <span class="gw-label">Packets: </span>
+      <span class="gw-value" id="gw-packets">0</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn danger" id="clear-btn">Clear All Data</button>
+  </div>
+
+  <!-- Bedside Node -->
+  <div class="section-title">Bedside Node</div>
   <div class="stats">
     <div class="stat-card">
       <h2 id="temp-val">--</h2>
-      <p>Temperature (°C)</p>
+      <p>Temperature (&deg;C)</p>
     </div>
     <div class="stat-card">
       <h2 id="pressure-val">--</h2>
@@ -54,19 +123,31 @@
     </div>
     <div class="stat-card">
       <h2 id="sound-val">--</h2>
-      <p>Sound activity</p>
+      <p>Sound Activity</p>
+    </div>
+  </div>
+  <div class="chart-box"><canvas id="envChart"></canvas></div>
+  <div class="chart-box"><canvas id="soundChart"></canvas></div>
+
+  <!-- Body Node -->
+  <div class="section-title">Body Node</div>
+  <div class="stats">
+    <div class="stat-card">
+      <h2 id="hr-val">--</h2>
+      <p>Heart Rate (bpm)</p>
     </div>
     <div class="stat-card">
-      <h2 id="node-val">--</h2>
-      <p>Active node</p>
+      <h2 id="spo2-val">--</h2>
+      <p>SpO2 (%)</p>
     </div>
-  </div>
-
-  <div class="chart-box">
-    <canvas id="envChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <canvas id="soundChart"></canvas>
+    <div class="stat-card">
+      <h2 id="position-val">--</h2>
+      <p>Position</p>
+    </div>
+    <div class="stat-card">
+      <h2 id="alert-val">--</h2>
+      <p>Alert Status</p>
+    </div>
   </div>
 
   <script src="dashboard.js"></script>

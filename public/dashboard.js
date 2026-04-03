@@ -1,20 +1,21 @@
 const socket = io();
 
 const MAX_POINTS = 100;
-const labels = [];
+const seenKeys = new Set();
+
+const bedsideLabels = [];
 const tempData = [];
 const pressureData = [];
 const soundData = [];
-
-let lastTimestamp = 0;
+let bedsideSeq = 0;
 
 const envChart = new Chart(document.getElementById('envChart'), {
   type: 'line',
   data: {
-    labels,
+    labels: bedsideLabels,
     datasets: [
       {
-        label: 'Temperature (°C)',
+        label: 'Temperature (\u00B0C)',
         data: tempData,
         borderColor: '#7eb8f7',
         backgroundColor: 'rgba(126,184,247,0.1)',
@@ -41,7 +42,7 @@ const envChart = new Chart(document.getElementById('envChart'), {
       y: {
         ticks: { color: '#7eb8f7' },
         grid: { color: '#2a2d3e' },
-        title: { display: true, text: '°C', color: '#7eb8f7' },
+        title: { display: true, text: '\u00B0C', color: '#7eb8f7' },
       },
       p: {
         position: 'right',
@@ -56,7 +57,7 @@ const envChart = new Chart(document.getElementById('envChart'), {
 const soundChart = new Chart(document.getElementById('soundChart'), {
   type: 'line',
   data: {
-    labels,
+    labels: bedsideLabels,
     datasets: [
       {
         label: 'Sound activity (mic range)',
@@ -84,23 +85,22 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }
 
-function pushPoint(reading) {
+function handleBedside(reading) {
+  bedsideSeq++;
   const ts = Number(reading.timestamp);
-  if (Number.isFinite(ts) && ts <= lastTimestamp) return;
-  if (Number.isFinite(ts)) lastTimestamp = ts;
+  const time = Number.isFinite(ts) ? formatTime(ts) : formatTime(Date.now());
 
-  const time = formatTime(ts);
   const temp = Number(reading.temp);
   const pressure = Number(reading.pressure);
   const sound = Number(reading.soundActivity);
 
-  labels.push(time);
+  bedsideLabels.push(time);
   tempData.push(Number.isFinite(temp) ? temp : null);
   pressureData.push(Number.isFinite(pressure) ? pressure : null);
   soundData.push(Number.isFinite(sound) ? sound : null);
 
-  if (labels.length > MAX_POINTS) {
-    labels.shift();
+  if (bedsideLabels.length > MAX_POINTS) {
+    bedsideLabels.shift();
     tempData.shift();
     pressureData.shift();
     soundData.shift();
@@ -117,72 +117,147 @@ function pushPoint(reading) {
   document.getElementById('sound-val').textContent = Number.isFinite(sound)
     ? String(Math.round(sound))
     : '--';
-  document.getElementById('node-val').textContent =
-    reading.nodeName && String(reading.nodeName).trim()
-      ? String(reading.nodeName).trim()
-      : '--';
 
   envChart.update();
   soundChart.update();
 }
 
-function applyHistory(readings) {
-  labels.length = 0;
-  tempData.length = 0;
-  pressureData.length = 0;
-  soundData.length = 0;
-  lastTimestamp = 0;
+function handleBody(reading) {
+  const hr = Number(reading.heartRate);
+  const spo2 = Number(reading.spo2);
+  const prone = reading.prone;
+  const alertActive = reading.alertActive;
+  const alertName = reading.alertName;
 
-  const sorted = [...readings].sort(
-    (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
-  );
-  const slice = sorted.slice(-MAX_POINTS);
-  for (const r of slice) {
-    lastTimestamp = Math.max(lastTimestamp, Number(r.timestamp) || 0);
-    const time = formatTime(Number(r.timestamp));
-    labels.push(time);
-    tempData.push(Number.isFinite(Number(r.temp)) ? Number(r.temp) : null);
-    pressureData.push(
-      Number.isFinite(Number(r.pressure)) ? Number(r.pressure) : null
-    );
-    soundData.push(
-      Number.isFinite(Number(r.soundActivity))
-        ? Number(r.soundActivity)
-        : null
-    );
+  const hrEl = document.getElementById('hr-val');
+  hrEl.textContent = Number.isFinite(hr) && hr > 0 ? String(Math.round(hr)) : '--';
+  hrEl.className = '';
+
+  const spo2El = document.getElementById('spo2-val');
+  if (Number.isFinite(spo2) && spo2 >= 0) {
+    spo2El.textContent = String(Math.round(spo2));
+    spo2El.className = spo2 < 90 ? 'alert' : spo2 < 95 ? 'warn' : '';
+  } else {
+    spo2El.textContent = '--';
+    spo2El.className = '';
   }
 
-  if (slice.length) {
-    const last = slice[slice.length - 1];
-    const temp = Number(last.temp);
-    const pressure = Number(last.pressure);
-    const sound = Number(last.soundActivity);
-    document.getElementById('temp-val').textContent = Number.isFinite(temp)
-      ? temp.toFixed(1)
-      : '--';
-    document.getElementById('pressure-val').textContent = Number.isFinite(
-      pressure
-    )
-      ? pressure.toFixed(1)
-      : '--';
-    document.getElementById('sound-val').textContent = Number.isFinite(sound)
-      ? String(Math.round(sound))
-      : '--';
-    document.getElementById('node-val').textContent =
-      last.nodeName && String(last.nodeName).trim()
-        ? String(last.nodeName).trim()
-        : '--';
+  const posEl = document.getElementById('position-val');
+  if (prone === true) {
+    posEl.textContent = 'Prone';
+    posEl.className = 'warn';
+  } else if (prone === false) {
+    posEl.textContent = 'Supine';
+    posEl.className = '';
+  } else {
+    posEl.textContent = '--';
+    posEl.className = '';
   }
 
-  envChart.update();
-  soundChart.update();
+  const alertEl = document.getElementById('alert-val');
+  if (alertActive) {
+    alertEl.textContent = alertName || 'ACTIVE';
+    alertEl.className = 'alert';
+  } else {
+    alertEl.textContent = 'None';
+    alertEl.className = '';
+  }
 }
 
-fetch('/api/readings?limit=100')
-  .then((r) => r.json())
-  .then(applyHistory)
-  .catch(() => {});
+function pushPoint(reading) {
+  if (reading._key) {
+    if (seenKeys.has(reading._key)) return;
+    seenKeys.add(reading._key);
+  }
+
+  const name = (reading.nodeName || '').toUpperCase().trim();
+  if (name === 'BEDSIDE') {
+    handleBedside(reading);
+  } else if (name === 'BODY') {
+    handleBody(reading);
+  }
+}
+
+// --- Gateway status ---
+function updateGateway(status) {
+  const dot = document.getElementById('gw-dot');
+  const label = document.getElementById('gw-status');
+  const seen = document.getElementById('gw-last-seen');
+  const pkts = document.getElementById('gw-packets');
+
+  if (status.online) {
+    dot.className = 'gw-dot online';
+    label.textContent = 'Online';
+    label.style.color = '#4caf50';
+  } else {
+    dot.className = 'gw-dot offline';
+    label.textContent = 'Offline';
+    label.style.color = '#f44336';
+  }
+  seen.textContent = status.lastSeen
+    ? new Date(status.lastSeen).toLocaleTimeString()
+    : '--';
+  pkts.textContent = String(status.packetsRelayed || 0);
+}
+
+socket.on('gatewayStatus', updateGateway);
 
 socket.on('newReading', (data) => {
   pushPoint(data);
 });
+
+socket.on('readingUpdate', (data) => {
+  const name = (data.nodeName || '').toUpperCase().trim();
+  if (name === 'BEDSIDE') handleBedside(data);
+  else if (name === 'BODY') handleBody(data);
+});
+
+socket.on('cleared', () => {
+  location.reload();
+});
+
+// --- Clear button ---
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (!confirm('Clear all readings from the database?')) return;
+  fetch('/api/readings', { method: 'DELETE' })
+    .then((r) => r.json())
+    .then(() => location.reload())
+    .catch(() => alert('Failed to clear readings'));
+});
+
+// --- Initial data load ---
+fetch('/api/readings?limit=100')
+  .then((r) => r.json())
+  .then((readings) => {
+    const sorted = [...readings].sort(
+      (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
+    );
+    for (const r of sorted) {
+      pushPoint(r);
+    }
+  })
+  .catch(() => {});
+
+fetch('/api/gateway-status')
+  .then((r) => r.json())
+  .then(updateGateway)
+  .catch(() => {});
+
+// Polling fallback: only fires when the socket hasn't delivered data recently
+let lastSocketEvent = Date.now();
+socket.on('newReading', () => { lastSocketEvent = Date.now(); });
+socket.on('readingUpdate', () => { lastSocketEvent = Date.now(); });
+
+setInterval(() => {
+  if (Date.now() - lastSocketEvent < 10000) return;
+  fetch('/api/readings?limit=25')
+    .then((r) => r.json())
+    .then((readings) => {
+      for (const row of readings) {
+        const name = (row.nodeName || '').toUpperCase().trim();
+        if (name === 'BEDSIDE') handleBedside(row);
+        else if (name === 'BODY') handleBody(row);
+      }
+    })
+    .catch(() => {});
+}, 10000);
