@@ -1,0 +1,56 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "readings": {
+      ".read": "auth != null",
+
+      "bedside": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['nodeName']) && newData.child('nodeName').isString() && newData.child('nodeName').val().length <= 32",
+        "nodeName":      { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "temp":          { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 85" },
+        "pressure":      { ".validate": "newData.isNumber() && newData.val() >= 300 && newData.val() <= 1200" },
+        "soundActivity": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
+        "receivedAtMs":  { ".validate": "newData.isNumber()" },
+        "timestamp":     { ".validate": "newData.isNumber()" },
+        "$other":        { ".validate": false }
+      },
+
+      "body": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['nodeName']) && newData.child('nodeName').isString() && newData.child('nodeName').val().length <= 32",
+        "nodeName":      { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "heartRate":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 250" },
+        "spo2":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "accelZ":        { ".validate": "newData.isNumber() && newData.val() >= -20 && newData.val() <= 20" },
+        "fingerPresent": { ".validate": "newData.isBoolean()" },
+        "prone":         { ".validate": "newData.isBoolean()" },
+        "alertActive":   { ".validate": "newData.isBoolean()" },
+        "alertType":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 255" },
+        "alertName":     { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "receivedAtMs":  { ".validate": "newData.isNumber()" },
+        "timestamp":     { ".validate": "newData.isNumber()" },
+        "$other":        { ".validate": false }
+      },
+
+      "$pushId": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['nodeName'])"
+      }
+    },
+
+    "status": {
+      ".read": "auth != null",
+      "gateway": {
+        ".write": "auth != null"
+      }
+    },
+
+    "config": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

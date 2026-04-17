@@ -2,153 +2,223 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ApneaNite Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <title>ApneaNite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #0f1117;
-      color: #e0e0e0;
-      padding: 24px;
-    }
-    h1 { color: #7eb8f7; margin-bottom: 16px; }
-
-    .gateway-bar {
-      display: flex;
-      align-items: center;
-      gap: 18px;
-      background: #1c1f2e;
-      border-radius: 10px;
-      padding: 12px 20px;
-      margin-bottom: 28px;
-      flex-wrap: wrap;
-    }
-    .gw-dot {
-      width: 12px; height: 12px;
-      border-radius: 50%;
-      background: #555;
-      flex-shrink: 0;
-    }
-    .gw-dot.online  { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
-    .gw-dot.offline { background: #f44336; }
-    .gw-label { color: #aaa; font-size: 0.85rem; }
-    .gw-value { color: #e0e0e0; font-weight: 600; }
-    .spacer { flex: 1; }
-    .btn {
-      background: #2a2d3e;
-      color: #ccc;
-      border: 1px solid #3a3d4e;
-      border-radius: 8px;
-      padding: 8px 16px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: background 0.2s;
-    }
-    .btn:hover { background: #3a3d4e; }
-    .btn.danger { border-color: #f44336; color: #f44336; }
-    .btn.danger:hover { background: #f44336; color: #fff; }
-
-    .section-title {
-      color: #7eb8f7;
-      font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      margin: 28px 0 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #2a2d3e;
-    }
-
-    .stats {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-    .stat-card {
-      background: #1c1f2e;
-      border-radius: 12px;
-      padding: 16px 24px;
-      flex: 1;
-      min-width: 130px;
-      text-align: center;
-    }
-    .stat-card h2 { font-size: 1.8rem; }
-    .stat-card p { color: #888; font-size: 0.8rem; margin-top: 4px; }
-    .stat-card .warn  { color: #ff9800; }
-    .stat-card .alert { color: #f44336; }
-    .chart-box {
-      background: #1c1f2e;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
-    canvas { width: 100% !important; }
-  </style>
 </head>
 <body>
-  <h1>ApneaNite Live Monitor</h1>
 
-  <!-- Gateway Status -->
-  <div class="gateway-bar">
-    <div class="gw-dot" id="gw-dot"></div>
-    <div>
-      <span class="gw-label">Gateway </span>
-      <span class="gw-value" id="gw-status">Offline</span>
+  <header class="app-header">
+    <div class="brand">
+
+      <div>
+        <h1>ApneaNite</h1>
+        <div class="sub">Live respiratory & vitals monitor</div>
+      </div>
     </div>
-    <div>
-      <span class="gw-label">Last seen: </span>
-      <span class="gw-value" id="gw-last-seen">--</span>
+    <div class="header-actions">
+      <button class="icon-btn" id="test-toast-btn" title="Send a test apnea notification">Test alert</button>
+      <button class="icon-btn danger" id="clear-btn" title="Clear all readings from the database">Clear</button>
     </div>
-    <div>
-      <span class="gw-label">Packets: </span>
-      <span class="gw-value" id="gw-packets">0</span>
-    </div>
-    <div class="spacer"></div>
-    <button class="btn danger" id="clear-btn">Clear All Data</button>
+  </header>
+
+  <div class="gateway-pill" role="status" aria-live="polite">
+    <span class="gw-dot" id="gw-dot"></span>
+    <span class="gw-value" id="gw-status">Offline</span>
+    <span class="gw-sep"></span>
+    <span class="gw-label">Last seen</span>
+    <span class="gw-value" id="gw-last-seen">--</span>
+    <span class="gw-sep"></span>
+    <span class="gw-label">Packets</span>
+    <span class="gw-value" id="gw-packets">0</span>
   </div>
 
-  <!-- Bedside Node -->
-  <div class="section-title">Bedside Node</div>
-  <div class="stats">
-    <div class="stat-card">
-      <h2 id="temp-val">--</h2>
-      <p>Temperature (&deg;C)</p>
-    </div>
-    <div class="stat-card">
-      <h2 id="pressure-val">--</h2>
-      <p>Pressure (hPa)</p>
-    </div>
-    <div class="stat-card">
-      <h2 id="sound-val">--</h2>
-      <p>Sound Activity</p>
-    </div>
+  <div class="alert-banner" id="alert-banner" role="alert" aria-live="assertive">
+    <span class="pulse"></span>
+    <span id="alert-banner-text">Apnea event detected</span>
   </div>
-  <div class="chart-box"><canvas id="envChart"></canvas></div>
-  <div class="chart-box"><canvas id="soundChart"></canvas></div>
 
-  <!-- Body Node -->
-  <div class="section-title">Body Node</div>
-  <div class="stats">
-    <div class="stat-card">
-      <h2 id="hr-val">--</h2>
-      <p>Heart Rate (bpm)</p>
+  <!-- ================== NOW ================== -->
+  <section class="section" id="now-section">
+    <header class="section-head">
+      <h2 class="section-title">Now</h2>
+      <span class="section-hint" id="now-updated">--</span>
+    </header>
+    <div class="grid">
+      <div class="card metric m-hr" id="card-hr">
+        <div class="top"><span class="dot"></span>Heart rate</div>
+        <div class="value"><span class="num" id="hr-val">--</span><span class="unit">bpm</span></div>
+        <div class="meta"><span class="pill" id="hr-pill">resting</span></div>
+      </div>
+      <div class="card metric m-spo2" id="card-spo2">
+        <div class="top"><span class="dot"></span>Blood oxygen</div>
+        <div class="value"><span class="num" id="spo2-val">--</span><span class="unit">%</span></div>
+        <div class="meta"><span class="pill" id="spo2-pill">SpO<sub>2</sub></span></div>
+      </div>
+      <div class="card metric m-position" id="card-position">
+        <div class="top"><span class="dot"></span>Position</div>
+        <div class="value"><span class="num" id="position-val" style="font-size:1.8rem;">--</span></div>
+        <div class="meta"><span class="pill" id="position-pill">sleep posture</span></div>
+      </div>
+      <div class="card metric m-alert" id="card-alert">
+        <div class="top"><span class="dot"></span>Alert</div>
+        <div class="value"><span class="num" id="alert-val" style="font-size:1.8rem;">--</span></div>
+        <div class="meta"><span class="pill" id="alert-pill">device state</span></div>
+      </div>
+
+      <div class="card metric m-temp" id="card-temp">
+        <div class="top"><span class="dot"></span>Bedroom temp</div>
+        <div class="value"><span class="num" id="temp-val">--</span><span class="unit">&deg;C</span></div>
+        <div class="meta"><span class="pill" id="temp-pill">ambient</span></div>
+      </div>
+      <div class="card metric m-pressure" id="card-pressure">
+        <div class="top"><span class="dot"></span>Pressure</div>
+        <div class="value"><span class="num" id="pressure-val">--</span><span class="unit">hPa</span></div>
+        <div class="meta"><span class="pill">barometric</span></div>
+      </div>
+      <div class="card metric m-sound" id="card-sound">
+        <div class="top"><span class="dot"></span>Sound activity</div>
+        <div class="value"><span class="num" id="sound-val">--</span><span class="unit">level</span></div>
+        <div class="meta"><span class="pill" id="sound-pill">snoring / breath</span></div>
+      </div>
     </div>
-    <div class="stat-card">
-      <h2 id="spo2-val">--</h2>
-      <p>SpO2 (%)</p>
+  </section>
+
+  <!-- ================== AVERAGES ================== -->
+  <section class="section">
+    <header class="section-head">
+      <h2 class="section-title">Averages</h2>
+      <span class="section-hint">Rolling 10-minute window</span>
+    </header>
+    <div class="grid">
+      <div class="card avg-card m-hr">
+        <div class="label">Heart rate</div>
+        <div class="avg-value"><span id="avg-hr">--</span> <small style="font-size:0.75rem;color:var(--fg-muted);font-weight:500;">bpm</small></div>
+        <div class="range" id="range-hr">min -- · max --</div>
+      </div>
+      <div class="card avg-card m-spo2">
+        <div class="label">Blood oxygen</div>
+        <div class="avg-value"><span id="avg-spo2">--</span> <small style="font-size:0.75rem;color:var(--fg-muted);font-weight:500;">%</small></div>
+        <div class="range" id="range-spo2">min -- · max --</div>
+      </div>
+      <div class="card avg-card m-temp">
+        <div class="label">Temperature</div>
+        <div class="avg-value"><span id="avg-temp">--</span> <small style="font-size:0.75rem;color:var(--fg-muted);font-weight:500;">&deg;C</small></div>
+        <div class="range" id="range-temp">min -- · max --</div>
+      </div>
+      <div class="card avg-card m-sound">
+        <div class="label">Sound activity</div>
+        <div class="avg-value"><span id="avg-sound">--</span></div>
+        <div class="range" id="range-sound">min -- · max --</div>
+      </div>
     </div>
-    <div class="stat-card">
-      <h2 id="position-val">--</h2>
-      <p>Position</p>
+  </section>
+
+  <!-- ================== TRENDS ================== -->
+  <section class="section">
+    <header class="section-head">
+      <h2 class="section-title">Trends</h2>
+      <span class="section-hint">Last 100 samples</span>
+    </header>
+    <div class="grid" style="grid-template-columns: 1fr;">
+      <div class="card chart-card">
+        <div class="chart-head">
+          <h3>Environment</h3>
+          <span class="hint">Temperature &amp; Pressure</span>
+        </div>
+        <div class="chart-wrap"><canvas id="envChart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head">
+          <h3>Sound activity</h3>
+          <span class="hint">Microphone range</span>
+        </div>
+        <div class="chart-wrap"><canvas id="soundChart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head">
+          <h3>Vitals</h3>
+          <span class="hint">HR &amp; SpO<sub>2</sub></span>
+        </div>
+        <div class="chart-wrap"><canvas id="vitalsChart"></canvas></div>
+      </div>
     </div>
-    <div class="stat-card">
-      <h2 id="alert-val">--</h2>
-      <p>Alert Status</p>
+  </section>
+
+  <!-- ================== THRESHOLDS ================== -->
+  <section class="section thresholds">
+    <header class="section-head">
+      <h2 class="section-title">Thresholds</h2>
+      <span class="section-hint">User-defined · saved on this device</span>
+    </header>
+    <div class="grid">
+      <div class="card thr-card m-hr">
+        <div class="thr-head"><div class="name">Heart rate</div><div class="chip">bpm</div></div>
+        <div class="thr-row"><label for="thr-hr-min">Min</label><input id="thr-hr-min" type="number" min="20" max="200" step="1" /></div>
+        <div class="thr-row"><label for="thr-hr-max">Max</label><input id="thr-hr-max" type="number" min="20" max="220" step="1" /></div>
+        <div class="thr-row"><label for="thr-hr-on">Enable alerts</label>
+          <label class="switch"><input id="thr-hr-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card thr-card m-spo2">
+        <div class="thr-head"><div class="name">Blood oxygen</div><div class="chip">%</div></div>
+        <div class="thr-row"><label for="thr-spo2-min">Min</label><input id="thr-spo2-min" type="number" min="50" max="100" step="1" /></div>
+        <div class="thr-row"><label for="thr-spo2-on">Enable alerts</label>
+          <label class="switch"><input id="thr-spo2-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card thr-card m-temp">
+        <div class="thr-head"><div class="name">Bedroom temperature</div><div class="chip">&deg;C</div></div>
+        <div class="thr-row"><label for="thr-temp-min">Min</label><input id="thr-temp-min" type="number" min="0" max="40" step="0.5" /></div>
+        <div class="thr-row"><label for="thr-temp-max">Max</label><input id="thr-temp-max" type="number" min="0" max="45" step="0.5" /></div>
+        <div class="thr-row"><label for="thr-temp-on">Enable alerts</label>
+          <label class="switch"><input id="thr-temp-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card thr-card m-sound">
+        <div class="thr-head"><div class="name">Sound activity</div><div class="chip">level</div></div>
+        <div class="thr-row"><label for="thr-sound-max">Max</label><input id="thr-sound-max" type="number" min="0" max="4000" step="10" /></div>
+        <div class="thr-row"><label for="thr-sound-on">Enable alerts</label>
+          <label class="switch"><input id="thr-sound-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card thr-card m-position">
+        <div class="thr-head"><div class="name">Sleep position</div><div class="chip">posture</div></div>
+        <div class="thr-row"><label for="thr-prone-on">Alert on prone position</label>
+          <label class="switch"><input id="thr-prone-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card thr-card m-alert">
+        <div class="thr-head"><div class="name">Apnea event</div><div class="chip">device</div></div>
+        <div class="thr-row"><label for="thr-apnea-on">Toast on device-detected apnea</label>
+          <label class="switch"><input id="thr-apnea-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+        <div class="thr-row"><label for="thr-beep-on">Play a soft chime with toasts</label>
+          <label class="switch"><input id="thr-beep-on" type="checkbox"/><span class="slider"></span></label>
+        </div>
+      </div>
     </div>
-  </div>
+
+    <div class="thr-actions">
+      <button class="btn-ghost" id="thr-reset">Reset to defaults</button>
+      <button class="btn-primary" id="thr-save">Save thresholds</button>
+    </div>
+  </section>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
   <script src="dashboard.js"></script>
 </body>
