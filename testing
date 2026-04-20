@@ -70,6 +70,9 @@ adc_oneshot_unit_handle_t adc1_handle = NULL;
 i2s_chan_handle_t rx_handle = NULL;
 int32_t micBuffer[I2S_READ_LEN];
 
+uint64_t micSumSquares = 0;
+uint32_t micSampleCount = 0;
+
 // ---------- callbacks ----------
 void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   Serial.print("Send status: ");
@@ -158,28 +161,37 @@ void setupI2SMic() {
   Serial.println("I2S mic initialized");
 }
 
-int readMicLoudness() {
-  if (rx_handle == NULL) return 0;
+// Non-blocking drain: pulls whatever is currently in the I2S DMA and folds it
+// into the running sum-of-squares. Must be called often (every loop tick) so
+// the DMA never overflows.
+void drainMic() {
+  if (rx_handle == NULL) return;
 
   size_t bytesRead = 0;
-  esp_err_t res = i2s_channel_read(rx_handle, micBuffer, sizeof(micBuffer), &bytesRead, 50 / portTICK_PERIOD_MS);
+  esp_err_t res = i2s_channel_read(rx_handle, micBuffer, sizeof(micBuffer), &bytesRead, 0);
 
   if (res != ESP_OK || bytesRead == 0) {
-    return 0;
+    return;
   }
 
   int sampleCount = bytesRead / sizeof(int32_t);
-  if (sampleCount <= 0) return 0;
-
-  uint64_t sumSquares = 0;
 
   for (int i = 0; i < sampleCount; i++) {
     int32_t sample = micBuffer[i] >> 14;
-    sumSquares += (int64_t)sample * sample;
+    micSumSquares += (int64_t)sample * sample;
   }
 
-  uint32_t meanSquare = sumSquares / sampleCount;
+  micSampleCount += sampleCount;
+}
+
+int computeMicRms() {
+  if (micSampleCount == 0) return 0;
+
+  uint32_t meanSquare = (uint32_t)(micSumSquares / micSampleCount);
   int rms = (int)sqrt((double)meanSquare);
+
+  micSumSquares = 0;
+  micSampleCount = 0;
 
   return rms;
 }
@@ -236,6 +248,9 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
+
+  // --- drain mic every loop tick so DMA never overflows ---
+  drainMic();
 
   // --- airflow sampling at 50 Hz ---
   if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
@@ -300,7 +315,7 @@ void loop() {
       }
     }
 
-    int micLoudness = readMicLoudness();
+    int micLoudness = computeMicRms();
 
     outgoingData.temp = (float)micLoudness;   // using temp field for mic loudness
     outgoingData.pressure = (float)avg;       // airflow avg
