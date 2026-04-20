@@ -17,7 +17,8 @@ const socket = io();
 // ---------- constants ----------
 const MAX_POINTS = 100;
 const AVG_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const TOAST_COOLDOWN_MS = 15 * 1000;  // per-source rate limit
+const TOAST_COOLDOWN_MS = 60 * 1000;  // per-source rate limit
+const TOAST_MAX_STACK = 3;            // cap concurrent toasts on screen
 const THRESHOLD_STORAGE_KEY = 'apneanite.thresholds.v1';
 
 const DEFAULT_THRESHOLDS = {
@@ -324,6 +325,19 @@ function showToast({ title, msg, sev = 'info', source, ttlMs = 7000, force = fal
     setTimeout(() => el.remove(), 200);
   };
   el.querySelector('.close').addEventListener('click', dismiss);
+
+  // Cap the stack so the page can't get flooded. Retire the oldest
+  // non-critical toast that isn't already animating out.
+  const live = stack.querySelectorAll('.toast:not(.leaving)');
+  if (live.length >= TOAST_MAX_STACK) {
+    for (const t of live) {
+      if (t.getAttribute('data-sev') !== 'critical') {
+        t.classList.add('leaving');
+        setTimeout(() => t.remove(), 200);
+        break;
+      }
+    }
+  }
 
   stack.appendChild(el);
   if (sev !== 'critical') setTimeout(dismiss, ttlMs);
