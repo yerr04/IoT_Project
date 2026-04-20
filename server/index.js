@@ -2,11 +2,31 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const db = require('./firebase');
+
+console.log('[boot] starting IoT dashboard server, node=' + process.version);
+
+let db;
+try {
+  db = require('./firebase');
+  console.log('[boot] firebase admin initialized');
+} catch (err) {
+  console.error('[boot] FATAL: firebase init failed:', err && err.message);
+  console.error(err && err.stack);
+  process.exit(1);
+}
+
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] uncaughtException:', err && err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandledRejection:', reason);
+});
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
 const INGEST_SECRET = process.env.INGEST_SECRET;
 
@@ -122,10 +142,15 @@ app.post('/api/readings', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Dashboard running at http://localhost:${PORT}`);
+const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HOST = '0.0.0.0';
+server.listen(PORT, HOST, () => {
+  console.log(`[boot] listening on ${HOST}:${PORT}`);
   if (INGEST_SECRET) {
     console.log('POST /api/readings requires ingest authentication.');
   }
+});
+
+server.on('error', (err) => {
+  console.error('[fatal] http server error:', err && err.stack);
 });
