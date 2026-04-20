@@ -73,6 +73,18 @@ int32_t micBuffer[I2S_READ_LEN];
 uint64_t micSumSquares = 0;
 uint32_t micSampleCount = 0;
 
+// --- mic diagnostics (reset every second) ---
+uint32_t micDrainCalls   = 0;
+uint32_t micDrainOk      = 0;
+uint32_t micDrainZero    = 0;
+uint32_t micDrainErr     = 0;
+esp_err_t micLastErr     = ESP_OK;
+uint32_t micLastBytes    = 0;
+int32_t  micSampleMin    = 0;
+int32_t  micSampleMax    = 0;
+int32_t  micRawMin       = 0;
+int32_t  micRawMax       = 0;
+
 // ---------- callbacks ----------
 void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   Serial.print("Send status: ");
@@ -159,25 +171,52 @@ void setupI2SMic() {
   }
 
   Serial.println("I2S mic initialized");
+  Serial.print("  SCK(BCLK)=GPIO"); Serial.println(I2S_SCK);
+  Serial.print("  WS(LRCL)=GPIO");  Serial.println(I2S_WS);
+  Serial.print("  SD(DOUT)=GPIO");  Serial.println(I2S_SD);
+  Serial.print("  sampleRate="); Serial.println(I2S_SAMPLE_RATE);
+  Serial.print("  slot=RIGHT  bits=32  bufferSamples="); Serial.println(I2S_READ_LEN);
+  Serial.print("  rx_handle="); Serial.println(rx_handle == NULL ? "NULL" : "OK");
 }
 
-// Non-blocking drain: pulls whatever is currently in the I2S DMA and folds it
-// into the running sum-of-squares. Must be called often (every loop tick) so
-// the DMA never overflows.
 void drainMic() {
-  if (rx_handle == NULL) return;
+  micDrainCalls++;
+
+  if (rx_handle == NULL) {
+    micDrainErr++;
+    micLastErr = ESP_ERR_INVALID_STATE;
+    return;
+  }
 
   size_t bytesRead = 0;
   esp_err_t res = i2s_channel_read(rx_handle, micBuffer, sizeof(micBuffer), &bytesRead, 0);
 
-  if (res != ESP_OK || bytesRead == 0) {
+  micLastErr = res;
+  micLastBytes = bytesRead;
+
+  if (res != ESP_OK) {
+    micDrainErr++;
     return;
   }
+
+  if (bytesRead == 0) {
+    micDrainZero++;
+    return;
+  }
+
+  micDrainOk++;
 
   int sampleCount = bytesRead / sizeof(int32_t);
 
   for (int i = 0; i < sampleCount; i++) {
-    int32_t sample = micBuffer[i] >> 14;
+    int32_t raw = micBuffer[i];
+    int32_t sample = raw >> 14;
+
+    if (raw < micRawMin) micRawMin = raw;
+    if (raw > micRawMax) micRawMax = raw;
+    if (sample < micSampleMin) micSampleMin = sample;
+    if (sample > micSampleMax) micSampleMax = sample;
+
     micSumSquares += (int64_t)sample * sample;
   }
 
@@ -185,13 +224,49 @@ void drainMic() {
 }
 
 int computeMicRms() {
-  if (micSampleCount == 0) return 0;
+  int rms = 0;
+  if (micSampleCount > 0) {
+    uint32_t meanSquare = (uint32_t)(micSumSquares / micSampleCount);
+    rms = (int)sqrt((double)meanSquare);
+  }
 
-  uint32_t meanSquare = (uint32_t)(micSumSquares / micSampleCount);
-  int rms = (int)sqrt((double)meanSquare);
+  Serial.print("[MIC] calls=");
+  Serial.print(micDrainCalls);
+  Serial.print(" ok=");
+  Serial.print(micDrainOk);
+  Serial.print(" zero=");
+  Serial.print(micDrainZero);
+  Serial.print(" err=");
+  Serial.print(micDrainErr);
+  Serial.print(" lastErr=0x");
+  Serial.print((uint32_t)micLastErr, HEX);
+  Serial.print(" lastBytes=");
+  Serial.print(micLastBytes);
+  Serial.print(" samples=");
+  Serial.print(micSampleCount);
+  Serial.print(" rawRange=[");
+  Serial.print(micRawMin);
+  Serial.print(",");
+  Serial.print(micRawMax);
+  Serial.print("] sampleRange=[");
+  Serial.print(micSampleMin);
+  Serial.print(",");
+  Serial.print(micSampleMax);
+  Serial.print("] rms=");
+  Serial.println(rms);
 
   micSumSquares = 0;
   micSampleCount = 0;
+  micDrainCalls = 0;
+  micDrainOk = 0;
+  micDrainZero = 0;
+  micDrainErr = 0;
+  micLastErr = ESP_OK;
+  micLastBytes = 0;
+  micSampleMin = 0;
+  micSampleMax = 0;
+  micRawMin = 0;
+  micRawMax = 0;
 
   return rms;
 }
