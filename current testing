@@ -1,0 +1,420 @@
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include <driver/i2s_std.h>
+#include <esp_adc/adc_oneshot.h>
+#include <math.h>
+
+const uint8_t ESPNOW_CHANNEL = 6;
+uint8_t gatewayAddress[] = {0x20, 0xE7, 0xC8, 0xB1, 0xEC, 0x98};
+
+// ---------- packet ----------
+typedef struct {
+  char nodeName[16];
+  float temp;
+  float pressure;
+  int soundActivity;
+} BedsidePacket;
+
+BedsidePacket outgoingData;
+
+// ---------- pins ----------
+const int LED_PIN = 4;
+
+// MPXV on GPIO34 = ADC1_CHANNEL_6
+static const adc_unit_t MPXV_ADC_UNIT = ADC_UNIT_1;
+static const adc_channel_t MPXV_ADC_CHANNEL = ADC_CHANNEL_6;
+
+// I2S mic (INMP441)
+#define I2S_WS          25 //change to 25
+#define I2S_SCK         14
+#define I2S_SD          32
+#define I2S_SAMPLE_RATE 16000
+#define I2S_READ_LEN    512
+
+// ---------- airflow timing ----------
+const int SAMPLE_HZ                    = 50;
+const unsigned long SAMPLE_INTERVAL_MS = 1000 / SAMPLE_HZ;
+const unsigned long SEND_INTERVAL_MS   = 1000;
+const unsigned long CALIBRATION_MS     = 3000;
+const unsigned long PAUSE_TRIGGER_MS   = 8000;
+
+// STRICT breath detection
+const int BREATH_PEAK_THRESHOLD = 180;
+const int BREATH_AVG_THRESHOLD  = 20;
+
+// baseline drift correction
+const int   BASELINE_UPDATE_LIMIT = 10;
+const float BASELINE_ALPHA        = 0.002f;
+
+// ---------- airflow state ----------
+bool calibrated     = false;
+bool detectorArmed  = false;
+bool localAlert     = false;
+
+unsigned long bootTime               = 0;
+unsigned long lastSampleMs           = 0;
+unsigned long lastSendMs             = 0;
+unsigned long lastDefinitiveBreathMs = 0;
+
+long  calibAccum = 0;
+int   calibCount = 0;
+float baseline   = 2048.0f;
+
+long windowSum   = 0;
+int  windowPeak  = 0;
+int  windowCount = 0;
+
+// ---------- ADC + mic state ----------
+adc_oneshot_unit_handle_t adc1_handle = NULL;
+i2s_chan_handle_t rx_handle = NULL;
+int32_t micBuffer[I2S_READ_LEN];
+
+uint64_t micSumSquares = 0;
+uint32_t micSampleCount = 0;
+
+// --- mic diagnostics (reset every second) ---
+uint32_t micDrainCalls   = 0;
+uint32_t micDrainOk      = 0;
+uint32_t micDrainZero    = 0;
+uint32_t micDrainErr     = 0;
+esp_err_t micLastErr     = ESP_OK;
+uint32_t micLastBytes    = 0;
+int32_t  micSampleMin    = 0;
+int32_t  micSampleMax    = 0;
+int32_t  micRawMin       = 0;
+int32_t  micRawMax       = 0;
+
+// ---------- callbacks ----------
+void onDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+  Serial.print("Send status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+}
+
+// ---------- ADC oneshot setup ----------
+void setupPressureADC() {
+  adc_oneshot_unit_init_cfg_t init_config = {};
+  init_config.unit_id = MPXV_ADC_UNIT;
+  init_config.ulp_mode = ADC_ULP_MODE_DISABLE;
+
+  esp_err_t err = adc_oneshot_new_unit(&init_config, &adc1_handle);
+  if (err != ESP_OK) {
+    Serial.print("adc_oneshot_new_unit failed: ");
+    Serial.println(err);
+    return;
+  }
+
+  adc_oneshot_chan_cfg_t chan_config = {};
+  chan_config.bitwidth = ADC_BITWIDTH_12;
+  chan_config.atten = ADC_ATTEN_DB_12;
+
+  err = adc_oneshot_config_channel(adc1_handle, MPXV_ADC_CHANNEL, &chan_config);
+  if (err != ESP_OK) {
+    Serial.print("adc_oneshot_config_channel failed: ");
+    Serial.println(err);
+    return;
+  }
+
+  Serial.println("ADC oneshot initialized");
+}
+
+int readPressureRaw() {
+  int raw = 0;
+  if (adc1_handle == NULL) return 0;
+
+  esp_err_t err = adc_oneshot_read(adc1_handle, MPXV_ADC_CHANNEL, &raw);
+  if (err != ESP_OK) return 0;
+
+  return raw;
+}
+
+// ---------- I2S setup ----------
+void setupI2SMic() {
+  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  chan_cfg.dma_desc_num = 4;
+  chan_cfg.dma_frame_num = 256;
+
+  if (i2s_new_channel(&chan_cfg, NULL, &rx_handle) != ESP_OK) {
+    Serial.println("I2S new channel failed");
+    return;
+  }
+
+  i2s_std_config_t std_cfg = {
+    .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_SAMPLE_RATE),
+    .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+    .gpio_cfg = {
+      .mclk = I2S_GPIO_UNUSED,
+      .bclk = (gpio_num_t)I2S_SCK,
+      .ws   = (gpio_num_t)I2S_WS,
+      .dout = I2S_GPIO_UNUSED,
+      .din  = (gpio_num_t)I2S_SD,
+      .invert_flags = {
+        .mclk_inv = false,
+        .bclk_inv = false,
+        .ws_inv = false,
+      },
+    },
+  };
+
+  // INMP441 often uses either left or right slot depending on L/R pin.
+  // Start with RIGHT because that's what your current file used.
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+
+  if (i2s_channel_init_std_mode(rx_handle, &std_cfg) != ESP_OK) {
+    Serial.println("I2S init std mode failed");
+    return;
+  }
+
+  if (i2s_channel_enable(rx_handle) != ESP_OK) {
+    Serial.println("I2S channel enable failed");
+    return;
+  }
+
+  Serial.println("I2S mic initialized");
+  Serial.print("  SCK(BCLK)=GPIO"); Serial.println(I2S_SCK);
+  Serial.print("  WS(LRCL)=GPIO");  Serial.println(I2S_WS);
+  Serial.print("  SD(DOUT)=GPIO");  Serial.println(I2S_SD);
+  Serial.print("  sampleRate="); Serial.println(I2S_SAMPLE_RATE);
+  Serial.print("  slot=RIGHT  bits=32  bufferSamples="); Serial.println(I2S_READ_LEN);
+  Serial.print("  rx_handle="); Serial.println(rx_handle == NULL ? "NULL" : "OK");
+}
+
+void drainMic() {
+  micDrainCalls++;
+
+  if (rx_handle == NULL) {
+    micDrainErr++;
+    micLastErr = ESP_ERR_INVALID_STATE;
+    return;
+  }
+
+  size_t bytesRead = 0;
+  esp_err_t res = i2s_channel_read(rx_handle, micBuffer, sizeof(micBuffer), &bytesRead, 0);
+
+  micLastErr = res;
+  micLastBytes = bytesRead;
+
+  if (res != ESP_OK) {
+    micDrainErr++;
+    return;
+  }
+
+  if (bytesRead == 0) {
+    micDrainZero++;
+    return;
+  }
+
+  micDrainOk++;
+
+  int sampleCount = bytesRead / sizeof(int32_t);
+
+  for (int i = 0; i < sampleCount; i++) {
+    int32_t raw = micBuffer[i];
+    int32_t sample = raw >> 14;
+
+    if (raw < micRawMin) micRawMin = raw;
+    if (raw > micRawMax) micRawMax = raw;
+    if (sample < micSampleMin) micSampleMin = sample;
+    if (sample > micSampleMax) micSampleMax = sample;
+
+    micSumSquares += (int64_t)sample * sample;
+  }
+
+  micSampleCount += sampleCount;
+}
+
+int computeMicRms() {
+  int rms = 0;
+  if (micSampleCount > 0) {
+    uint32_t meanSquare = (uint32_t)(micSumSquares / micSampleCount);
+    rms = (int)sqrt((double)meanSquare);
+  }
+
+  Serial.print("[MIC] calls=");
+  Serial.print(micDrainCalls);
+  Serial.print(" ok=");
+  Serial.print(micDrainOk);
+  Serial.print(" zero=");
+  Serial.print(micDrainZero);
+  Serial.print(" err=");
+  Serial.print(micDrainErr);
+  Serial.print(" lastErr=0x");
+  Serial.print((uint32_t)micLastErr, HEX);
+  Serial.print(" lastBytes=");
+  Serial.print(micLastBytes);
+  Serial.print(" samples=");
+  Serial.print(micSampleCount);
+  Serial.print(" rawRange=[");
+  Serial.print(micRawMin);
+  Serial.print(",");
+  Serial.print(micRawMax);
+  Serial.print("] sampleRange=[");
+  Serial.print(micSampleMin);
+  Serial.print(",");
+  Serial.print(micSampleMax);
+  Serial.print("] rms=");
+  Serial.println(rms);
+
+  micSumSquares = 0;
+  micSampleCount = 0;
+  micDrainCalls = 0;
+  micDrainOk = 0;
+  micDrainZero = 0;
+  micDrainErr = 0;
+  micLastErr = ESP_OK;
+  micLastBytes = 0;
+  micSampleMin = 0;
+  micSampleMax = 0;
+  micRawMin = 0;
+  micRawMax = 0;
+
+  return rms;
+}
+
+// ---------- ESP-NOW setup ----------
+void setupEspNow() {
+  WiFi.mode(WIFI_STA);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.disconnect(true, true);
+
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_send_cb(onDataSent);
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, gatewayAddress, 6);
+  peerInfo.channel = ESPNOW_CHANNEL;
+  peerInfo.encrypt = false;
+
+  esp_now_del_peer(gatewayAddress);
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  setupPressureADC();
+  setupI2SMic();
+  setupEspNow();
+
+  strcpy(outgoingData.nodeName, "BEDSIDE");
+
+  bootTime     = millis();
+  lastSampleMs = millis();
+  lastSendMs   = millis();
+
+  Serial.println("Bedside sender ready. Calibrating baseline for 3s...");
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // --- drain mic every loop tick so DMA never overflows ---
+  drainMic();
+
+  // --- airflow sampling at 50 Hz ---
+  if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+    lastSampleMs = now;
+
+    int raw = readPressureRaw();
+
+    if (!calibrated) {
+      if (now - bootTime < CALIBRATION_MS) {
+        calibAccum += raw;
+        calibCount++;
+      } else {
+        baseline = (calibCount > 0) ? ((float)calibAccum / calibCount) : 2048.0f;
+        calibrated = true;
+        Serial.print("Calibration done. Baseline = ");
+        Serial.println((int)baseline);
+      }
+      return;
+    }
+
+    int diff = abs(raw - (int)baseline);
+
+    if (!localAlert && diff <= BASELINE_UPDATE_LIMIT) {
+      baseline = (1.0f - BASELINE_ALPHA) * baseline + BASELINE_ALPHA * raw;
+    }
+
+    windowSum += diff;
+    windowCount++;
+
+    if (diff > windowPeak) {
+      windowPeak = diff;
+    }
+  }
+
+  // --- once per second: evaluate breath, read mic, send ---
+  if (calibrated && (now - lastSendMs >= SEND_INTERVAL_MS)) {
+    lastSendMs = now;
+
+    int avg = (windowCount > 0) ? (windowSum / windowCount) : 0;
+    int peak = windowPeak;
+
+    windowSum = 0;
+    windowPeak = 0;
+    windowCount = 0;
+
+    bool definitiveBreath = (peak >= BREATH_PEAK_THRESHOLD) && (avg >= BREATH_AVG_THRESHOLD);
+
+    if (definitiveBreath) {
+      detectorArmed = true;
+      lastDefinitiveBreathMs = now;
+      localAlert = false;
+      digitalWrite(LED_PIN, LOW);
+    }
+
+    unsigned long sinceBreathMs = 0;
+    if (detectorArmed) {
+      sinceBreathMs = now - lastDefinitiveBreathMs;
+
+      if (!localAlert && sinceBreathMs >= PAUSE_TRIGGER_MS) {
+        localAlert = true;
+        digitalWrite(LED_PIN, HIGH);
+      }
+    }
+
+    int micLoudness = computeMicRms();
+
+    outgoingData.temp = (float)micLoudness;   // using temp field for mic loudness
+    outgoingData.pressure = (float)avg;       // airflow avg
+    outgoingData.soundActivity = peak;        // airflow peak
+
+    esp_err_t result = esp_now_send(
+      gatewayAddress,
+      (uint8_t*)&outgoingData,
+      sizeof(outgoingData)
+    );
+
+    Serial.print("peak: ");
+    Serial.print(peak);
+    Serial.print(" | avg: ");
+    Serial.print(avg);
+    Serial.print(" | mic: ");
+    Serial.print(micLoudness);
+    Serial.print(" | breath: ");
+    Serial.print(definitiveBreath ? "YES" : "no");
+    Serial.print(" | sinceBreath: ");
+    Serial.print(detectorArmed ? (sinceBreathMs / 1000) : 0);
+    Serial.print("s | pauseLED: ");
+    Serial.print(localAlert ? "ON" : "off");
+    Serial.print(" | TX: ");
+    Serial.println(result == ESP_OK ? "ok" : "fail");
+  }
+}
