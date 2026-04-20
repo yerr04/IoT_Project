@@ -26,7 +26,7 @@ static const adc_unit_t MPXV_ADC_UNIT = ADC_UNIT_1;
 static const adc_channel_t MPXV_ADC_CHANNEL = ADC_CHANNEL_6;
 
 // I2S mic (INMP441)
-#define I2S_WS          15
+#define I2S_WS          25 //change to 25
 #define I2S_SCK         14
 #define I2S_SD          32
 #define I2S_SAMPLE_RATE 16000
@@ -158,7 +158,7 @@ void setupI2SMic() {
 
   // INMP441 often uses either left or right slot depending on L/R pin.
   // Start with RIGHT because that's what your current file used.
-  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_RIGHT;
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
 
   if (i2s_channel_init_std_mode(rx_handle, &std_cfg) != ESP_OK) {
     Serial.println("I2S init std mode failed");
@@ -309,8 +309,9 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   setupPressureADC();
-  setupI2SMic();
   setupEspNow();
+  delay(100);
+  setupI2SMic();
 
   strcpy(outgoingData.nodeName, "BEDSIDE");
 
