@@ -11,7 +11,6 @@
 
   --hr: #ff2d55;
   --spo2: #5ac8fa;
-  --temp: #ff9500;
   --pressure: #30b0c7;
   --sound: #34c759;
   --position: #af52de;
@@ -245,7 +244,6 @@ body {
 /* Custom metric colors */
 .m-hr       { --metric-color: var(--hr); }
 .m-spo2     { --metric-color: var(--spo2); }
-.m-temp     { --metric-color: var(--temp); }
 .m-pressure { --metric-color: var(--pressure); }
 .m-sound    { --metric-color: var(--sound); }
 .m-position { --metric-color: var(--position); }

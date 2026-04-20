@@ -74,11 +74,6 @@
         <div class="meta"><span class="pill" id="alert-pill">device state</span></div>
       </div>
 
-      <div class="card metric m-temp" id="card-temp">
-        <div class="top"><span class="dot"></span>Bedroom temp</div>
-        <div class="value"><span class="num" id="temp-val">--</span><span class="unit">&deg;C</span></div>
-        <div class="meta"><span class="pill" id="temp-pill">ambient</span></div>
-      </div>
       <div class="card metric m-pressure" id="card-pressure">
         <div class="top"><span class="dot"></span>Pressure</div>
         <div class="value"><span class="num" id="pressure-val">--</span><span class="unit">hPa</span></div>
@@ -109,11 +104,6 @@
         <div class="avg-value"><span id="avg-spo2">--</span> <small style="font-size:0.75rem;color:var(--fg-muted);font-weight:500;">%</small></div>
         <div class="range" id="range-spo2">min -- · max --</div>
       </div>
-      <div class="card avg-card m-temp">
-        <div class="label">Temperature</div>
-        <div class="avg-value"><span id="avg-temp">--</span> <small style="font-size:0.75rem;color:var(--fg-muted);font-weight:500;">&deg;C</small></div>
-        <div class="range" id="range-temp">min -- · max --</div>
-      </div>
       <div class="card avg-card m-sound">
         <div class="label">Sound activity</div>
         <div class="avg-value"><span id="avg-sound">--</span></div>
@@ -131,8 +121,8 @@
     <div class="grid" style="grid-template-columns: 1fr;">
       <div class="card chart-card">
         <div class="chart-head">
-          <h3>Environment</h3>
-          <span class="hint">Temperature &amp; Pressure</span>
+          <h3>Pressure</h3>
+          <span class="hint">Barometric trend</span>
         </div>
         <div class="chart-wrap"><canvas id="envChart"></canvas></div>
       </div>
@@ -174,15 +164,6 @@
         <div class="thr-row"><label for="thr-spo2-min">Min</label><input id="thr-spo2-min" type="number" min="50" max="100" step="1" /></div>
         <div class="thr-row"><label for="thr-spo2-on">Enable alerts</label>
           <label class="switch"><input id="thr-spo2-on" type="checkbox"/><span class="slider"></span></label>
-        </div>
-      </div>
-
-      <div class="card thr-card m-temp">
-        <div class="thr-head"><div class="name">Bedroom temperature</div><div class="chip">&deg;C</div></div>
-        <div class="thr-row"><label for="thr-temp-min">Min</label><input id="thr-temp-min" type="number" min="0" max="40" step="0.5" /></div>
-        <div class="thr-row"><label for="thr-temp-max">Max</label><input id="thr-temp-max" type="number" min="0" max="45" step="0.5" /></div>
-        <div class="thr-row"><label for="thr-temp-on">Enable alerts</label>
-          <label class="switch"><input id="thr-temp-on" type="checkbox"/><span class="slider"></span></label>
         </div>
       </div>
 

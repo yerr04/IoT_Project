@@ -23,7 +23,6 @@ const THRESHOLD_STORAGE_KEY = 'apneanite.thresholds.v1';
 const DEFAULT_THRESHOLDS = {
   hr:       { min: 50,  max: 120, on: true  },
   spo2:     { min: 90,          on: true  },
-  temp:     { min: 18,  max: 26, on: true  },
   sound:    { max: 1800,        on: false },
   proneOn:  true,
   apneaOn:  true,
@@ -33,12 +32,11 @@ const DEFAULT_THRESHOLDS = {
 let thresholds = loadThresholds();
 
 // ---------- rolling buffers for averages ----------
-const bedsideBuffer = []; // { t, temp, pressure, sound }
+const bedsideBuffer = []; // { t, pressure, sound }
 const bodyBuffer    = []; // { t, hr, spo2, prone }
 
 // ---------- chart buffers ----------
 const bedsideLabels = [];
-const tempData = [];
 const pressureData = [];
 const soundData = [];
 
@@ -57,7 +55,6 @@ function cssVar(name, fallback) {
 const C = {
   hr:       cssVar('--hr',       '#ff2d55'),
   spo2:     cssVar('--spo2',     '#5ac8fa'),
-  temp:     cssVar('--temp',     '#ff9500'),
   pressure: cssVar('--pressure', '#30b0c7'),
   sound:    cssVar('--sound',    '#34c759'),
   fg:       cssVar('--fg',       '#1c1c1e'),
@@ -92,21 +89,12 @@ const envChart = new Chart(document.getElementById('envChart'), {
     labels: bedsideLabels,
     datasets: [
       {
-        label: 'Temperature',
-        data: tempData,
-        borderColor: C.temp,
-        backgroundColor: hexAlpha(C.temp, 0.14),
-        tension: 0.35,
-        fill: true,
-        yAxisID: 'y',
-      },
-      {
         label: 'Pressure',
         data: pressureData,
         borderColor: C.pressure,
-        backgroundColor: 'transparent',
+        backgroundColor: hexAlpha(C.pressure, 0.14),
         tension: 0.35,
-        fill: false,
+        fill: true,
         yAxisID: 'p',
       },
     ],
@@ -115,14 +103,9 @@ const envChart = new Chart(document.getElementById('envChart'), {
     ...commonChartOpts(),
     scales: {
       x: { ticks: { color: C.fgMuted, maxTicksLimit: 6 }, grid: { color: C.sep } },
-      y: {
-        ticks: { color: C.temp }, grid: { color: C.sep },
-        title: { display: true, text: '\u00B0C', color: C.temp },
-      },
       p: {
-        position: 'right',
         ticks: { color: C.pressure },
-        grid: { drawOnChartArea: false },
+        grid: { color: C.sep },
         title: { display: true, text: 'hPa', color: C.pressure },
       },
     },
@@ -233,14 +216,15 @@ function loadThresholds() {
     const raw = localStorage.getItem(THRESHOLD_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_THRESHOLDS };
     const parsed = JSON.parse(raw);
-    return {
+    const merged = {
       ...DEFAULT_THRESHOLDS,
       ...parsed,
       hr:    { ...DEFAULT_THRESHOLDS.hr,    ...(parsed.hr    || {}) },
       spo2:  { ...DEFAULT_THRESHOLDS.spo2,  ...(parsed.spo2  || {}) },
-      temp:  { ...DEFAULT_THRESHOLDS.temp,  ...(parsed.temp  || {}) },
       sound: { ...DEFAULT_THRESHOLDS.sound, ...(parsed.sound || {}) },
     };
+    delete merged.temp;
+    return merged;
   } catch {
     return { ...DEFAULT_THRESHOLDS };
   }
@@ -262,10 +246,6 @@ function renderThresholdInputs() {
   document.getElementById('thr-spo2-min').value = thresholds.spo2.min;
   document.getElementById('thr-spo2-on').checked = !!thresholds.spo2.on;
 
-  document.getElementById('thr-temp-min').value = thresholds.temp.min;
-  document.getElementById('thr-temp-max').value = thresholds.temp.max;
-  document.getElementById('thr-temp-on').checked = !!thresholds.temp.on;
-
   document.getElementById('thr-sound-max').value = thresholds.sound.max;
   document.getElementById('thr-sound-on').checked = !!thresholds.sound.on;
 
@@ -280,7 +260,6 @@ function readThresholdInputs() {
   return {
     hr:    { min: num('thr-hr-min'),   max: num('thr-hr-max'),  on: on('thr-hr-on') },
     spo2:  { min: num('thr-spo2-min'),                          on: on('thr-spo2-on') },
-    temp:  { min: num('thr-temp-min'), max: num('thr-temp-max'), on: on('thr-temp-on') },
     sound: { max: num('thr-sound-max'),                          on: on('thr-sound-on') },
     proneOn: on('thr-prone-on'),
     apneaOn: on('thr-apnea-on'),
@@ -412,17 +391,6 @@ function evaluateAlerts(reading) {
   }
 
   if (isBed) {
-    if (thresholds.temp.on && Number.isFinite(reading.temp)) {
-      if (reading.temp < thresholds.temp.min) {
-        showToast({ title: 'Room is cold',
-          msg: `Temperature ${reading.temp.toFixed(1)}°C is below your minimum of ${thresholds.temp.min}°C.`,
-          sev: 'info', source: 'temp-low' });
-      } else if (reading.temp > thresholds.temp.max) {
-        showToast({ title: 'Room is warm',
-          msg: `Temperature ${reading.temp.toFixed(1)}°C exceeds your maximum of ${thresholds.temp.max}°C.`,
-          sev: 'info', source: 'temp-high' });
-      }
-    }
     if (thresholds.sound.on && Number.isFinite(reading.soundActivity)) {
       if (reading.soundActivity > thresholds.sound.max) {
         showToast({ title: 'Loud sound activity',
@@ -456,36 +424,23 @@ function handleBedside(reading) {
   const ts = Number(reading.timestamp);
   const time = Number.isFinite(ts) ? formatTime(ts) : formatTime(Date.now());
 
-  const temp     = Number(reading.temp);
   const pressure = Number(reading.pressure);
   const sound    = Number(reading.soundActivity);
 
   bedsideLabels.push(time);
-  tempData.push(Number.isFinite(temp) ? temp : null);
   pressureData.push(Number.isFinite(pressure) ? pressure : null);
   soundData.push(Number.isFinite(sound) ? sound : null);
 
   while (bedsideLabels.length > MAX_POINTS) {
     bedsideLabels.shift();
-    tempData.shift();
     pressureData.shift();
     soundData.shift();
   }
 
   // Live values
-  setText('temp-val',     Number.isFinite(temp) ? temp.toFixed(1) : '--');
   setText('pressure-val', Number.isFinite(pressure) ? pressure.toFixed(1) : '--');
   setText('sound-val',    Number.isFinite(sound) ? String(Math.round(sound)) : '--');
 
-  // Temp state
-  if (Number.isFinite(temp)) {
-    const hot = thresholds.temp.on && temp > thresholds.temp.max;
-    const cold = thresholds.temp.on && temp < thresholds.temp.min;
-    setMetricState('card-temp', hot || cold ? 'warn' : null);
-    setPill('temp-pill',
-      hot ? 'warm' : cold ? 'cool' : 'ambient',
-      hot || cold ? 'warn' : '');
-  }
   // Sound state
   if (Number.isFinite(sound)) {
     const loud = thresholds.sound.on && sound > thresholds.sound.max;
@@ -494,7 +449,7 @@ function handleBedside(reading) {
   }
 
   const now = Number.isFinite(ts) ? ts : Date.now();
-  bedsideBuffer.push({ t: now, temp, pressure, sound });
+  bedsideBuffer.push({ t: now, pressure, sound });
   pruneBuffer(bedsideBuffer, now);
 
   updateAverages();
@@ -608,7 +563,6 @@ function updateAverages() {
 
   const hr = avgMinMax(bodyBuffer.map((r) => r.hr));
   const sp = avgMinMax(bodyBuffer.map((r) => r.spo2));
-  const tp = avgMinMax(bedsideBuffer.map((r) => r.temp));
   const sn = avgMinMax(bedsideBuffer.map((r) => r.sound));
 
   setText('avg-hr',   hr ? Math.round(hr.avg) : '--');
@@ -616,9 +570,6 @@ function updateAverages() {
 
   setText('avg-spo2', sp ? Math.round(sp.avg) : '--');
   setText('range-spo2', sp ? `min ${Math.round(sp.min)} · max ${Math.round(sp.max)}` : 'min -- · max --');
-
-  setText('avg-temp', tp ? tp.avg.toFixed(1) : '--');
-  setText('range-temp', tp ? `min ${tp.min.toFixed(1)} · max ${tp.max.toFixed(1)}` : 'min -- · max --');
 
   setText('avg-sound', sn ? Math.round(sn.avg) : '--');
   setText('range-sound', sn ? `min ${Math.round(sn.min)} · max ${Math.round(sn.max)}` : 'min -- · max --');
@@ -695,10 +646,6 @@ document.getElementById('thr-save').addEventListener('click', () => {
   const next = readThresholdInputs();
   if (!(next.hr.min < next.hr.max)) {
     showToast({ title: 'Invalid heart-rate range', msg: 'Min must be less than max.', sev: 'warning' });
-    return;
-  }
-  if (!(next.temp.min < next.temp.max)) {
-    showToast({ title: 'Invalid temperature range', msg: 'Min must be less than max.', sev: 'warning' });
     return;
   }
   thresholds = next;
