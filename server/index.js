@@ -71,11 +71,21 @@ app.get('/api/gateway-status', (_req, res) => {
   res.json(gatewayStatus);
 });
 
+// Clears simulated readings
 app.delete('/api/readings', async (_req, res) => {
   try {
-    await db.ref('readings').remove();
+    const snap = await db.ref('readings').once('value');
+    const updates = {};
+    let removed = 0;
+    snap.forEach((child) => {
+      if (child.key !== 'bedside' && child.key !== 'body') {
+        updates[child.key] = null;
+        removed += 1;
+      }
+    });
+    if (removed) await db.ref('readings').update(updates);
     io.emit('cleared');
-    res.json({ ok: true });
+    res.json({ ok: true, removed });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to clear readings' });

@@ -2,12 +2,16 @@
   "name": "iot_project",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node server/index.js",
+    "start": "node server/index.js",
     "dev": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json nodemon server/index.js",
-    "simulate": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node test/simulate.js"
+    "simulate": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node test/simulate.js",
+    "clean:simulated": "GOOGLE_APPLICATION_CREDENTIALS=./serviceAccountKey.json node test/clean-simulated.js"
   },
   "repository": {
     "type": "git",
